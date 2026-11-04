@@ -11,8 +11,10 @@
     "start": "node --env-file=.env dist/server.js",
     "simulate": "node --env-file=.env dist/simulator.js",
     "db:check": "node --env-file=.env scripts/check-db.mjs",
+    "db:secure": "node --env-file=.env scripts/provision-app-role.mjs",
+    "db:migrate": "node --env-file=.env.admin scripts/apply-schema.mjs",
     "test": "npm run build && node --test test/assistant.test.mjs",
-    "test:db": "npm run build && node --env-file=.env --test test/assistant.integration.test.mjs",
+    "test:db": "npm run build && node --env-file=.env --env-file=.env.admin --test test/assistant.integration.test.mjs",
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {

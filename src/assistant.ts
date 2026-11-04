@@ -16,6 +16,7 @@ export async function handleAssistantMessage(pool: Pool, message: AssistantMessa
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    await client.query("SELECT set_config('app.user_key', $1, true)", [message.userId]);
     const userResult = await client.query<{ id: string; timezone: string }>(
       `INSERT INTO users (whatsapp_id) VALUES ($1)
        ON CONFLICT (whatsapp_id) DO UPDATE SET whatsapp_id = EXCLUDED.whatsapp_id

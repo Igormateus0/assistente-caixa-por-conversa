@@ -17,12 +17,11 @@ Primeiro recorte do MVP: processar mensagens de texto pelo simulador local, Tele
 
 ## Preparação local
 
-1. Instale Node.js 22 ou superior.
-2. Preencha `DATABASE_URL` no `.env` local com a conexão PostgreSQL. Para usar WhatsApp, preencha também as variáveis `WHATSAPP_*`. O `.env` é ignorado pelo Git e nunca deve ser enviado ao repositório.
-3. Aplique/atualize `database/schema.sql` no banco PostgreSQL/Supabase. O arquivo inclui migrações aditivas para auditoria e reversões; faça backup antes de executar em uma base com dados importantes.
-4. Instale as dependências com `npm.cmd install`; rode `npm.cmd test` para testar e compilar.
-5. Instale o hook local do Gitleaks com `powershell -ExecutionPolicy Bypass -File scripts/install-gitleaks-hook.ps1`. Ele verifica os arquivos preparados antes de cada commit e bloqueia credenciais detectadas.
-
+1. Instale Node.js 22 ou superior e as dependências com `npm.cmd install`.
+2. No primeiro provisionamento, coloque temporariamente a conexão administrativa do PostgreSQL/Supabase em `DATABASE_URL` no `.env` local. Faça backup antes de alterar um banco com dados importantes e rode `npm.cmd run db:secure`. O script aplica `database/schema.sql`, cria `assistente_caixa_app` com senha aleatória, testa o acesso restrito e troca `DATABASE_URL` para a conexão do app. A conexão administrativa é movida para `.env.admin`, que fica ignorado pelo Git.
+3. O servidor carrega apenas `.env`; não configure `DATABASE_ADMIN_URL` no ambiente publicado. Use `npm.cmd run db:migrate` para aplicar futuras alterações do schema com a conexão local administrativa.
+4. Rode `npm.cmd test` e `npm.cmd run test:db`. O teste integrado verifica isolamento RLS, permissões mínimas e operações com dois perfis. Para commits, instale o hook local do Gitleaks com `powershell -ExecutionPolicy Bypass -File scripts/install-gitleaks-hook.ps1`.
+5. Para usar WhatsApp, preencha somente as variáveis `WHATSAPP_*` necessárias no `.env`. Não envie `.env` nem `.env.admin` ao Git.
 ## Simulador local
 
 O simulador usa a mesma lógica de conversa do webhook e o banco definido em `DATABASE_URL`. Ele não chama WhatsApp nem envia mensagens para fora. Inicie com `npm.cmd run simulate` depois de compilar. Digite mensagens como `recebi 150 por um corte`, responda `sim` para confirmar, ou use `listar`, `corrigir ID`, `desfazer` e `resumo hoje|semana|mês`. Uma correção pode ser preparada com `corrigir ID valor 130` ou em etapas: `corrigir ID`, `descrição novo detalhe`, `categoria Transporte`, `valor 130`, `sim`. Correções e reversões exigem confirmação. Use `/usuario manicure` para trocar o perfil de teste e `/sair` para encerrar. Os lançamentos de teste são persistidos no banco no perfil `local:<nome>`.

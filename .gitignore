@@ -4,3 +4,6 @@ dist/
 .env/
 .tools/
 *.log
+
+.env.*
+!.env.example
