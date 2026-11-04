@@ -31,6 +31,22 @@ test('persistência, correção confirmada, resumo e reversão auditada no Postg
     }, 'Aplique o database/schema.sql atualizado antes do teste integrado');
     schemaReady = true;
 
+    const rls = await pool.query(`
+      SELECT count(*)::int AS table_count,
+             count(*) FILTER (WHERE c.relrowsecurity)::int AS rls_count,
+             count(*) FILTER (WHERE EXISTS (
+               SELECT 1 FROM pg_policies p
+               WHERE p.schemaname = n.nspname AND p.tablename = c.relname
+                 AND p.roles && ARRAY['anon', 'authenticated', 'public']::name[]
+             ))::int AS public_policy_count
+      FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'public' AND c.relkind = 'r'
+        AND c.relname = ANY($1::text[])
+    `, [['users', 'pending_entries', 'transactions', 'pending_operations', 'transaction_events']]);
+    assert.deepEqual(rls.rows[0], {
+      table_count: 5, rls_count: 5, public_policy_count: 0,
+    }, 'As cinco tabelas devem manter RLS ativo e sem políticas abertas à API pública');
+
     const confirmation = await send('Recebi R$ 2.500,00 pagamento referente ao salário de outubro, parcela 2');
     assert.match(confirmation, /R\$\s*2\.500,00/);
     assert.match(confirmation, /pagamento referente ao salário de outubro, parcela 2/i);
@@ -40,6 +56,11 @@ test('persistência, correção confirmada, resumo e reversão auditada no Postg
     assert.match(listing, /pagamento referente ao salário de outubro, parcela 2/i);
     const id = listing.match(/#(\d+)/)?.[1];
     assert.ok(id, 'A listagem deve apresentar o ID do lançamento');
+    assert.match(await sendAs(otherUserKey, 'listar'), /Ainda não há lançamentos salvos/i);
+    assert.match(await sendAs(otherUserKey, `detalhe ${id}`), /Não encontrei esse ID neste perfil/i);
+    const otherSummary = await sendAs(otherUserKey, 'resumo mês');
+    assert.match(otherSummary, /Entradas \(0\): R\$\s*0,00/);
+    assert.doesNotMatch(otherSummary, /pagamento referente ao salário de outubro/i);
     assert.match(await sendAs(otherUserKey, `corrigir ${id}`), /Não encontrei esse lançamento/i);
     assert.match(await sendAs(otherUserKey, `desfazer ${id}`), /Não encontrei esse lançamento/i);
 
