@@ -1,0 +1,12 @@
+#!/bin/sh
+set -eu
+
+repo_root="$(git rev-parse --show-toplevel)"
+scanner="$repo_root/.tools/gitleaks.exe"
+
+if [ ! -f "$scanner" ]; then
+  echo "Gitleaks não está instalado. Execute: powershell -ExecutionPolicy Bypass -File scripts/install-gitleaks-hook.ps1" >&2
+  exit 1
+fi
+
+"$scanner" git --pre-commit --redact --staged --verbose

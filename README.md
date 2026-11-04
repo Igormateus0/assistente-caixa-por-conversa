@@ -21,6 +21,7 @@ Primeiro recorte do MVP: processar mensagens de texto pelo simulador local, Tele
 2. Preencha `DATABASE_URL` no `.env` local com a conexão PostgreSQL. Para usar WhatsApp, preencha também as variáveis `WHATSAPP_*`. O `.env` é ignorado pelo Git e nunca deve ser enviado ao repositório.
 3. Aplique/atualize `database/schema.sql` no banco PostgreSQL/Supabase. O arquivo inclui migrações aditivas para auditoria e reversões; faça backup antes de executar em uma base com dados importantes.
 4. Instale as dependências com `npm.cmd install`; rode `npm.cmd test` para testar e compilar.
+5. Instale o hook local do Gitleaks com `powershell -ExecutionPolicy Bypass -File scripts/install-gitleaks-hook.ps1`. Ele verifica os arquivos preparados antes de cada commit e bloqueia credenciais detectadas.
 
 ## Simulador local
 
@@ -41,6 +42,6 @@ Sem credenciais de envio, as respostas ficam no log do servidor para permitir de
 - `listar` → mostra os IDs dos últimos lançamentos ativos para consulta e correção.
 - `detalhe ID` → consulta os dados e a data de um lançamento pelo ID.
 - `corrigir ID` → inicia correção de um lançamento salvo; os campos suportados são valor, categoria, tipo e descrição. A alteração só é aplicada depois de `sim`.
-- `desfazer` → mostra a operação mais recente e pede confirmação. Ao confirmar, ela é marcada como revertida e permanece no histórico de auditoria.
+- `desfazer` → lista lançamentos ativos; use `desfazer ID` para escolher um e confirme antes da reversão. O registro fica preservado no histórico de auditoria.
 
 O saldo é calculado com base nos lançamentos enviados pelo usuário. Não representa conciliação bancária nem conhecimento de movimentações que não foram registradas.
