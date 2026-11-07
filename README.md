@@ -20,7 +20,7 @@ Primeiro recorte do MVP: processar mensagens de texto pelo simulador local, Tele
 1. Instale Node.js 22 ou superior e as dependências com `npm.cmd install`.
 2. No primeiro provisionamento, coloque temporariamente a conexão administrativa do PostgreSQL/Supabase em `DATABASE_URL` no `.env` local. Faça backup antes de alterar um banco com dados importantes e rode `npm.cmd run db:secure`. O script aplica `database/schema.sql`, cria `assistente_caixa_app` com senha aleatória, testa o acesso restrito e troca `DATABASE_URL` para a conexão do app. A conexão administrativa é movida para `.env.admin`, que fica ignorado pelo Git.
 3. O servidor carrega apenas `.env`; não configure `DATABASE_ADMIN_URL` no ambiente publicado. Use `npm.cmd run db:migrate` para aplicar futuras alterações do schema com a conexão local administrativa.
-4. Rode `npm.cmd test` e `npm.cmd run test:db`. O teste integrado verifica isolamento RLS, permissões mínimas e operações com dois perfis. Para commits, instale o hook local do Gitleaks com `powershell -ExecutionPolicy Bypass -File scripts/install-gitleaks-hook.ps1`.
+4. Rode `npm.cmd test`. O teste integrado requer o banco separado descrito abaixo; não execute `npm.cmd run test:db` até configurar `.env.test`. Para commits, instale o hook local do Gitleaks com `powershell -ExecutionPolicy Bypass -File scripts/install-gitleaks-hook.ps1`.
 5. Para usar WhatsApp, preencha somente as variáveis `WHATSAPP_*` necessárias no `.env`. Não envie `.env` nem `.env.admin` ao Git.
 ## Simulador local
 
@@ -31,6 +31,17 @@ Para testar o Telegram, crie um bot pelo [@BotFather](https://t.me/BotFather), c
 O Telegram e o WhatsApp usam identificadores de usuário separados (`telegram:` e o número do WhatsApp), mantendo os perfis e lançamentos isolados. Este adaptador inicial aceita texto em conversa privada; áudio e grupos não são suportados. Para testar o webhook da Meta, configure uma URL pública HTTPS `/webhook` e inscreva o app no campo `messages`. O endpoint valida a assinatura `X-Hub-Signature-256` com `WHATSAPP_APP_SECRET` antes de aceitar notificações.
 
 Sem credenciais de envio, as respostas ficam no log do servidor para permitir desenvolvimento local. Não coloque segredos no Git.
+
+## Demonstração
+
+No simulador ou em uma conversa privada com o bot no Telegram, use um perfil de teste e envie:
+
+1. **Recebi 150 pelo corte da Ana** → confira o valor e a descrição e responda **sim**.
+2. **Gastei 20 com gasolina** → confira a despesa e responda **sim**.
+3. **Resumo mês** → em um perfil sem outros lançamentos, o saldo registrado será de R$ 130,00.
+4. **Listar** → escolha o ID da despesa, envie **desfazer ID** e confirme com **sim**. O saldo volta a R$ 150,00 e a reversão fica no histórico.
+
+O simulador e o Telegram usam a mesma lógica de registro e confirmação. O PostgreSQL isola os perfis com RLS e mantém a auditoria de criação, correção e reversão. Este MVP demonstra o fluxo por texto. Áudio e exportação estão no roadmap.
 
 ## Exemplos de conversa
 
@@ -44,3 +55,16 @@ Sem credenciais de envio, as respostas ficam no log do servidor para permitir de
 - `desfazer` → lista lançamentos ativos; use `desfazer ID` para escolher um e confirme antes da reversão. O registro fica preservado no histórico de auditoria.
 
 O saldo é calculado com base nos lançamentos enviados pelo usuário. Não representa conciliação bancária nem conhecimento de movimentações que não foram registradas.
+
+## Banco isolado para teste integrado
+
+O teste integrado nunca deve usar o banco do bot nem a conexão administrativa dele.
+
+1. Crie ou escolha um PostgreSQL de teste separado. Pode ser um segundo projeto Supabase ou um PostgreSQL local. No Supabase Free há limite de projetos ativos e projetos sem atividade suficiente podem ser pausados; confira a [página de preços](https://supabase.com/pricing) e a [regra de pausa](https://supabase.com/docs/guides/platform/free-project-pausing).
+2. Copie o arquivo .env.test.example para .env.test e coloque em DATABASE_TEST_ADMIN_URL somente a conexão administrativa do banco de teste. Não copie .env.admin.
+3. Rode npm.cmd run db:secure:test. O provisionador compara o alvo com DATABASE_URL de .env e interrompe se for o mesmo projeto/banco. Se passar, ele aplica o schema no banco de teste e grava a conexão restrita em DATABASE_TEST_URL, sem imprimir senhas.
+4. Rode npm.cmd run test:db. O script valida que as duas URLs de teste apontam ao mesmo banco e que ele é diferente do banco do app. O processo de teste recebe apenas as credenciais do banco de teste; a conexão administrativa do app não é carregada.
+
+O teste integrado é dividido em casos nomeados para RLS, resumo/correção, reversão de ID alheio, reversão repetida, correção de ID alheio, user_id trocado e auditoria. A limpeza usa privilégio administrativo exclusivamente no banco de teste.
+
+A página de preços oficial do Supabase explica o limite do plano gratuito. A documentação oficial explica quando projetos gratuitos podem ser pausados por inatividade.

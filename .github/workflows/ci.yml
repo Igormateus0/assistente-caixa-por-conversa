@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Testes e PostgreSQL isolado
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      app_target:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci-only
+          POSTGRES_DB: app_target
+        ports:
+          - "5433:5432"
+        options: >-
+          --health-cmd "pg_isready -U postgres -d app_target"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci-only
+          POSTGRES_DB: assistente_test
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd "pg_isready -U postgres -d assistente_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Baixar repositório
+        uses: actions/checkout@v7
+      - name: Configurar Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Instalar dependências
+        run: npm ci
+      - name: Criar configurações efêmeras dos bancos
+        run: |
+          cat > .env <<'EOF'
+          DATABASE_URL=postgresql://postgres:ci-only@127.0.0.1:5433/app_target
+          EOF
+          cat > .env.test <<'EOF'
+          DATABASE_TEST_ADMIN_URL=postgresql://postgres:ci-only@127.0.0.1:5432/assistente_test
+          EOF
+      - name: Compilar TypeScript e executar testes unitários
+        run: npm test
+      - name: Preparar banco de teste isolado
+        run: npm run db:secure:test
+      - name: Executar testes de integração PostgreSQL
+        run: npm run test:db
+
+  secrets:
+    name: Gitleaks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Baixar histórico completo
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Procurar segredos no histórico
+        uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_COMMENTS: "false"
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"

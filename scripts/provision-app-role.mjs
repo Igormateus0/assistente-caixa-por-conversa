@@ -1,13 +1,27 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { readFile, writeFile, access } from 'node:fs/promises';
 import { Pool } from 'pg';
+import { readEnvFile, assertTestDatabaseIsolation } from './database-target.mjs';
 
-const envPath = new URL('../.env', import.meta.url);
+const testMode = process.argv.includes('--test');
+const envPath = new URL(testMode ? '../.env.test' : '../.env', import.meta.url);
 const adminEnvPath = new URL('../.env.admin', import.meta.url);
-const adminUrlText = process.env.DATABASE_URL;
-if (!adminUrlText) throw new Error('Preencha DATABASE_URL com a conexão administrativa temporária antes do provisionamento.');
-try { await access(adminEnvPath); throw new Error('.env.admin já existe; interrompi para não sobrescrever credenciais.'); }
-catch (error) { if (error.code !== 'ENOENT') throw error; }
+const appEnv = testMode ? await readEnvFile(new URL('../.env', import.meta.url)) : undefined;
+const targetEnv = testMode ? await readEnvFile(envPath) : process.env;
+const adminUrlText = testMode ? targetEnv.DATABASE_TEST_ADMIN_URL : process.env.DATABASE_URL;
+if (!adminUrlText) {
+  throw new Error(testMode
+    ? 'Configure DATABASE_TEST_ADMIN_URL em .env.test para o banco de teste separado.'
+    : 'Preencha DATABASE_URL com a conexão administrativa temporária antes do provisionamento.');
+}
+if (testMode) {
+  if (!appEnv?.DATABASE_URL) throw new Error('DATABASE_URL do app não foi encontrada em .env; não consigo provar o isolamento.');
+  if (targetEnv.DATABASE_TEST_URL) throw new Error('DATABASE_TEST_URL já existe; não vou sobrescrever o papel existente.');
+  assertTestDatabaseIsolation({ appUrl: appEnv.DATABASE_URL, testUrl: adminUrlText, testAdminUrl: adminUrlText });
+} else {
+  try { await access(adminEnvPath); throw new Error('.env.admin já existe; interrompi para não sobrescrever credenciais.'); }
+  catch (error) { if (error.code !== 'ENOENT') throw error; }
+}
 
 const adminUrl = new URL(adminUrlText);
 const roleName = 'assistente_caixa_app';
@@ -75,18 +89,27 @@ try {
   if (deniedWithoutContext.rowCount !== 0) throw new Error('RLS não negou acesso sem contexto de usuário.');
 
   const envText = await readFile(envPath, 'utf8');
-  const adminEnvText = `DATABASE_ADMIN_URL="${adminUrlText}"\n`;
-  const appLine = `DATABASE_URL="${appUrl.toString()}"`;
-  const updatedEnv = envText.replace(/^\s*DATABASE_URL=.*$/m, appLine);
-  if (updatedEnv === envText && !/^\s*DATABASE_URL=/m.test(envText)) {
-    throw new Error('Não encontrei DATABASE_URL no .env; não gravei as credenciais novas.');
+  if (testMode) {
+    const appLine = 'DATABASE_TEST_URL="' + appUrl.toString() + '"';
+    const updatedEnv = /^\s*DATABASE_TEST_URL=.*$/m.test(envText)
+      ? envText.replace(/^\s*DATABASE_TEST_URL=.*$/m, appLine)
+      : envText.trimEnd() + '\n' + appLine + '\n';
+    await writeFile(envPath, updatedEnv, 'utf8');
+    console.log('Papel restrito de teste criado; .env.test recebeu DATABASE_TEST_URL. Nenhuma senha foi exibida.');
+  } else {
+    const adminEnvText = 'DATABASE_ADMIN_URL="' + adminUrlText + '"\n';
+    const appLine = 'DATABASE_URL="' + appUrl.toString() + '"';
+    const updatedEnv = envText.replace(/^\s*DATABASE_URL=.*$/m, appLine);
+    if (updatedEnv === envText && !/^\s*DATABASE_URL=/m.test(envText)) {
+      throw new Error('Não encontrei DATABASE_URL no .env; não gravei as credenciais novas.');
+    }
+    await writeFile(adminEnvPath, adminEnvText, { encoding: 'utf8', flag: 'wx' });
+    await writeFile(envPath, updatedEnv, 'utf8');
+    console.log('Papel PostgreSQL restrito criado; .env usa a conexão do app e .env.admin guarda a conexão administrativa local.');
   }
-  await writeFile(adminEnvPath, adminEnvText, { encoding: 'utf8', flag: 'wx' });
-  await writeFile(envPath, updatedEnv, 'utf8');
-  console.log('Papel PostgreSQL restrito criado; .env usa a nova conexão do app e .env.admin guarda a conexão administrativa somente para testes/migrações locais.');
   console.log('Teste de conexão, leitura do próprio perfil e bloqueio sem contexto passaram. Nenhuma senha foi exibida.');
 } catch (error) {
-  console.error(`Provisionamento interrompido: ${error.message}`);
+  console.error('Provisionamento interrompido (' + (error.code ?? 'configuração') + '). Nenhuma credencial foi exibida.');
   process.exitCode = 1;
 } finally {
   if (appPool) await appPool.end();
